@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+    xmlns:camel="http://camel.apache.org/schema/spring"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+    xsi:schemaLocation="http://www.springframework.org/schema/beans 
+    http://www.springframework.org/schema/beans/spring-beans.xsd http://camel.apache.org/schema/spring 
+    http://camel.apache.org/schema/spring/camel-spring.xsd http://cxf.apache.org/core http://cxf.apache.org/schemas/core.xsd">
+   
+    <bean class="org.apache.commons.dbcp.BasicDataSource" id="dataStore">
+        <property name="driverClassName" value="org.postgresql.Driver"/>
+        <property name="url" value="${db_url}"/>
+        <property name="username" value="${db_username}"/>
+        <property name="password" value="${db_password}"/>
+        <property name="maxWait" value="${db_maxWait}"/>
+    </bean>
+    
+    <bean class="com.example.Processing" id="process">
+        <property name="dataSource" ref="dataStore"/>
+    </bean>
+
+    <bean id="restlet" class="org.apache.camel.component.restlet.RestletComponent">
+  <property name="threadMaxIdleTimeMs" value="${threadMaxIdeal}"/>
+    </bean>
+    
+    <camelContext id="LoanApplication_Context" streamCache="true" xmlns="http://camel.apache.org/schema/spring">
+        <propertyPlaceholder id="prop" location="application.properties"/>
+	    <dataFormats>
+		<json id="jsonOrder" library="Jackson"/>
+	    </dataFormats>
+
+        <route id="borrower_application_details_route">
+            <from uri="restlet:http://{{apiHost}}:{{apiPort}}/api/getDB?restletMethod=GET"/>
+            <doTry>
+                <log message="Hit Received at ${date:now:yyyy-MM-dd'T'HH:mm:ss:SSS}"/>
+		   
+		        <bean ref="process" method="getListFromDB"/>
+		        <marshal ref="jsonOrder"/>
+                <log message="Hit Processed at ${date:now:yyyy-MM-dd'T'HH:mm:ss:SSS} ${body}"/>
+            <doCatch>
+                <exception>java.lang.RuntimeException</exception>
+                <removeHeaders pattern="*"/>
+                <setHeader headerName="Content-Type"><simple>application/json</simple></setHeader>
+                <setBody><simple>{"Status":"Failed","Messaage":"${exception.message}"}</simple></setBody>
+                <marshal ref="jsonOrder"/>
+                <setHeader headerName="CamelRestletResponse"><simple>${body}</simple></setHeader>
+            </doCatch>
+			<doCatch>
+          		<exception>java.lang.Exception</exception>
+        		<removeHeaders pattern="*"/>
+                <setHeader headerName="Content-Type"><simple>application/json</simple></setHeader>
+                <setBody><simple>{"Status":"Failed","Messaage":"${exception.message}"}</simple></setBody>
+                <setHeader headerName="CamelRestletResponse"><simple>${body}</simple></setHeader>
+			</doCatch>
+     		</doTry>        
+    	</route>
+
+    </camelContext>
+</beans>
